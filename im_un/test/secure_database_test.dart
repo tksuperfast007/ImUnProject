@@ -89,6 +89,77 @@ void main() {
   });
 
   test(
+    'startup recovery survives a Keystore failure and preserves the old file',
+    () async {
+      final original = manager();
+      await intMapStoreFactory.store('calIBW').add(
+        await original.open(oldPath),
+        {'weight': 'old record'},
+      );
+      await original.close();
+      final oldFile = File('$oldPath.secure');
+      final before = await oldFile.readAsBytes();
+
+      final keys = <String, String>{};
+      var failWrite = true;
+      SecureDatabaseManager recoveryManager() => SecureDatabaseManager(
+        readKey: () async => throw StateError('Keystore cannot unwrap old key'),
+        writeKey: (_) async => fail('Must preserve the old key'),
+        readRecoveryKey: (generation) async => keys[generation],
+        writeRecoveryKey: (generation, value) async {
+          if (failWrite) throw StateError('Key write failed');
+          keys[generation] = value;
+        },
+      );
+      final data = <String, Object?>{
+        'sembast_export': 1,
+        'version': 1,
+        'stores': [
+          {
+            'name': 'calIBW',
+            'keys': [3],
+            'values': [
+              {'weight': 'restored record'},
+            ],
+          },
+        ],
+      };
+
+      final recovery = recoveryManager();
+      await expectLater(recovery.open(oldPath), throwsStateError);
+      await expectLater(recovery.recover(oldPath, data), throwsStateError);
+      expect(await File('$oldPath.recovery/active').exists(), isFalse);
+      expect(await oldFile.readAsBytes(), before);
+
+      failWrite = false;
+      await recovery.recover(oldPath, data);
+      final active = File('$oldPath.recovery/active');
+      final generation = await active.readAsString();
+      expect(await oldFile.readAsBytes(), before);
+      expect(
+        await File('$oldPath.recovery/$generation.db').readAsString(),
+        isNot(contains('restored record')),
+      );
+      final restarted = recoveryManager();
+      final store = intMapStoreFactory.store('calIBW');
+      final db = await restarted.open(oldPath);
+      expect((await store.record(3).get(db))?['weight'], 'restored record');
+      expect(await store.add(db, {'weight': 'new record'}), greaterThan(3));
+      await restarted.close();
+
+      keys.remove(generation);
+      await expectLater(recovery.open(oldPath), throwsStateError);
+      failWrite = true;
+      await expectLater(recovery.recover(oldPath, data), throwsStateError);
+      expect(await active.readAsString(), generation);
+      failWrite = false;
+      await recovery.recover(oldPath, data);
+      expect(await active.readAsString(), isNot(generation));
+      expect(await File('$oldPath.recovery/$generation.db').exists(), isTrue);
+    },
+  );
+
+  test(
     'failure to persist key leaves the original database untouched',
     () async {
       final original = await databaseFactoryIo.openDatabase(oldPath);

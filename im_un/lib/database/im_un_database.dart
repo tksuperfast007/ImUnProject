@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import 'package:sembast/sembast.dart';
@@ -9,11 +8,16 @@ class ImUnDB {
 
   ImUnDB({required this.dbName});
 
-  Future<Database> openDatabase() async {
-    Directory appDirectory = await getApplicationDocumentsDirectory();
-    String dbLocation = join(appDirectory.path, dbName);
-    return secureDatabaseManager.open(dbLocation);
+  Future<String> _databasePath() async {
+    final appDirectory = await getApplicationDocumentsDirectory();
+    return join(appDirectory.path, dbName);
   }
+
+  Future<Database> openDatabase() async =>
+      secureDatabaseManager.open(await _databasePath());
+
+  Future<void> recoverDatabase(Map<String, Object?> data) async =>
+      secureDatabaseManager.recover(await _databasePath(), data);
 
   Future<int> InsertData(List transaction) async {
     var db = await this.openDatabase();

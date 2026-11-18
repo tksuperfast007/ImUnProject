@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:project_mom/controller/im_un_controller.dart';
@@ -61,6 +63,24 @@ class _DatabaseStartupState extends State<DatabaseStartup> {
                       onPressed: () => setState(() => _ready = _openDatabase()),
                       child: const Text('ลองอีกครั้ง'),
                     ),
+                    if (Platform.isAndroid)
+                      Builder(
+                        builder: (context) => OutlinedButton(
+                          onPressed: () async {
+                            final recovered = await Navigator.of(context)
+                                .push<bool>(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const BackupPage(startupRecovery: true),
+                                  ),
+                                );
+                            if (mounted && recovered == true) {
+                              setState(() => _ready = _openDatabase());
+                            }
+                          },
+                          child: const Text('กู้คืนจากไฟล์สำรอง'),
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -6,7 +6,9 @@ import 'package:project_mom/database/im_un_database.dart';
 import 'package:project_mom/database/portable_backup.dart';
 
 class BackupPage extends StatefulWidget {
-  const BackupPage({super.key});
+  const BackupPage({super.key, this.startupRecovery = false});
+
+  final bool startupRecovery;
   @override
   State<BackupPage> createState() => _BackupPageState();
 }
@@ -110,6 +112,7 @@ class _BackupPageState extends State<BackupPage> {
   }
 
   Future<void> restoreBackup() async {
+    setState(() => busy = true);
     try {
       final files = await FilePicker.pickFiles(
         dialogTitle: 'เลือกไฟล์สำรองอิ่มอุ่น',
@@ -124,16 +127,16 @@ class _BackupPageState extends State<BackupPage> {
       if (!mounted) return;
       final pass = await password(creating: false);
       if (pass == null || !mounted) return;
-      setState(() => busy = true);
       final data = await backup.decrypt(bytes, pass);
       if (!mounted) return;
-      setState(() => busy = false);
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('แทนที่ข้อมูลในเครื่อง?'),
-          content: const Text(
-            'การกู้คืนจะแทนที่ประวัติทั้งหมดในเครื่องนี้ด้วยข้อมูลจากไฟล์ หากต้องการเก็บข้อมูลปัจจุบัน โปรดสำรองข้อมูลก่อน',
+          content: Text(
+            widget.startupRecovery
+                ? 'แอปจะเปิดใช้ประวัติจากไฟล์สำรองและเก็บไฟล์ฐานข้อมูลเดิมไว้'
+                : 'การกู้คืนจะแทนที่ประวัติทั้งหมดในเครื่องนี้ด้วยข้อมูลจากไฟล์ หากต้องการเก็บข้อมูลปัจจุบัน โปรดสำรองข้อมูลก่อน',
           ),
           actions: [
             TextButton(
@@ -148,9 +151,13 @@ class _BackupPageState extends State<BackupPage> {
         ),
       );
       if (confirmed != true || !mounted) return;
-      setState(() => busy = true);
-      final db = await ImUnDB(dbName: 'ImUnTransaction.db').openDatabase();
-      await backup.restore(db, data);
+      final database = ImUnDB(dbName: 'ImUnTransaction.db');
+      if (widget.startupRecovery) {
+        await database.recoverDatabase(data);
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+      await backup.restore(await database.openDatabase(), data);
       if (mounted) _message('กู้คืนข้อมูลสำเร็จ');
     } catch (_) {
       if (mounted)
@@ -174,15 +181,19 @@ class _BackupPageState extends State<BackupPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'สร้างไฟล์สำรองที่เข้ารหัส แล้วเก็บไฟล์ไว้ในที่ปลอดภัยนอกเครื่องนี้ เช่น พื้นที่จัดเก็บส่วนตัว แอปไม่เก็บรหัสผ่านให้คุณ',
+          Text(
+            widget.startupRecovery
+                ? 'เลือกไฟล์สำรองอิ่มอุ่นและกรอกรหัสผ่านที่ตั้งไว้เมื่อสร้างไฟล์'
+                : 'สร้างไฟล์สำรองที่เข้ารหัส แล้วเก็บไฟล์ไว้ในที่ปลอดภัยนอกเครื่องนี้ เช่น พื้นที่จัดเก็บส่วนตัว แอปไม่เก็บรหัสผ่านให้คุณ',
           ),
           const SizedBox(height: 20),
-          FilledButton(
-            onPressed: busy ? null : makeBackup,
-            child: const Text('สร้างไฟล์สำรอง'),
-          ),
-          const SizedBox(height: 12),
+          if (!widget.startupRecovery) ...[
+            FilledButton(
+              onPressed: busy ? null : makeBackup,
+              child: const Text('สร้างไฟล์สำรอง'),
+            ),
+            const SizedBox(height: 12),
+          ],
           OutlinedButton(
             onPressed: busy ? null : restoreBackup,
             child: const Text('กู้คืนจากไฟล์สำรอง'),
